@@ -1,0 +1,541 @@
+---
+title: 'ST661 Mini Project: Team IronMan'
+author: "Group M"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+  word_document:
+    toc: true
+  pdf_document:
+    toc: true
+---
+
+
+
+# Project Divisions {.tabset}
+
+## Introduction
+
+<div style="text-align: justify; text-justify: inter-word;">
+
+#### This mini-project analyses athlete performance data from an Ironman triathlon event. 
+
+The dataset includes swim, bike, and run split times, total time to finish, age group, gender, and country of representation as the key variables. We are interested in identifying the most influential factors on overall race performance and how an athlete's demographic profile impacts race outcomes. This will help us understand endurance performance in detail; identify a few key factors contributing to success; and identify trends related to demographics and location among competitive athletes.
+
+### To guide the analysis, our group selected four targeted questions, each addressing a meaningful aspect of performance:
+
+### 1. Which race segment (swim, bike, run) has the strongest impact on total finish time?
+
+It is important for athletes and coaches alike to know what segment of the race (swim, bike, or run) has the largest effect on finish time. Once that has been determined, training can be prioritised to yield maximum improvement in total performance. A small improvement in the segment that has the biggest effect will translate into a large improvement in total race results.
+
+### 2. Which countries supplied the most finishers?
+
+Country representation allows an understanding of global participation. This question will reveal those countries that had the most finishers, providing insight into the popularity and ease of access of Ironman events across the globe and showing which nations have a culture that fosters excellent endurance athletes.
+
+### 3. Are there significant performance differences between male and female athletes?
+
+Gender-based analysis helps reveal competitive parity and physiological influences on performance. By comparing male and female split times and total finishing times, we can assess the extent of performance differences and overlap, providing evidence on how gender impacts endurance outcomes in long-distance triathlons.
+
+### 4. How does performance vary across different age groups?
+
+Ironman athletes represent a wide age spectrum, from young adults to seasoned veterans. Analyzing finishing times across age groups provides insight into performance longevity, age-related trends, and competitiveness among various brackets. This helps in understanding how age influences endurance, pacing, and recovery strategies.
+
+#### Together, these four questions form a cohesive problem statement:
+
+### Problem Statement
+
+This analysis will be able to determine the key performance indicators in Ironman and provide insight on how performance differs by demographic group (age and gender) and geographic region. This study's goal is to identify trends in endurance performance, determine which race segments have the largest impact and provide insight into how age, gender, and nationality affect Ironman performance.
+
+ </div>
+ 
+ 
+
+## Data Adjustments
+<div style="text-align: justify; text-justify: inter-word;">
+
+Before conducting the analysis, several essential data adjustments were applied to prepare the dataset for visualisation and statistical computation:
+
+#### 1. Loaded the raw dataset `ironman.Rdata` and stored it in `df`.
+
+The raw dataset was imported in R’s `.Rdata` format to preserve all variable types, factor levels, and structures. This ensured that the starting dataset was complete and unaltered, maintaining the integrity of the original data for analysis.
+
+#### 2. Retained core variables: `Ovr`, `Gen`, `Div`, `Name`, `Number`, `AG`, `Country`, `Swim`, `Bike`, `Run`, `Total`.
+
+Only the most relevant fields were kept to focus the analysis on key athlete performance metrics and demographics. This step eliminated unnecessary columns, reduced complexity, and ensured computational efficiency.
+
+#### 3. Converted time-based variables (`Swim`, `Bike`, `Run`, `Total`) from `"HH:MM:SS"` format into numeric seconds, then into minutes (`*_min` columns).
+
+Character-based time fields cannot be used in statistical computation or correlation analysis. Converting them to numeric minutes allowed for:
+- Accurate computation of correlations and linear relationships,  
+- Clear visualisation in plots such as boxplots and bar charts,  
+- Consistent units across all analyses for comparability.  
+
+This step was crucial to make the dataset suitable for quantitative analysis.
+
+#### 4. Created a “Finished only” subset `finished_df`.
+
+Athletes who did not complete the race (DNF, DNS, or missing times) are not included in this analysis. The focus on only valid finishers will provide a true indication of the performance correlation, visualisation, and predictive modelling, and eliminates bias caused by incomplete information.
+
+#### 5. Identified and flagged outliers in total finishing time.
+
+A single extreme finishing-time outlier was detected using an interquartile range (IQR) rule and flagged as `total_outlier = "low"`. Although only one outlier was found, it was retained for transparency while documenting anomalous data points.
+
+#### 6. Converted categorical variables (`Gen`, `AG`, `Country`) into factors.
+
+The grouping and summary procedures of the research were conducted properly, the aggregated data was accurate, and factoring was completed in a way that allowed for easy ordering. By factoring variables, visual representations such as bar charts, box plots, and statistical summaries were clearer.
+
+#### 7. Cleaned whitespace and ensured no empty strings in category columns.
+
+Minor issues such as trailing whitespace or empty strings were eliminated. This step prevents errors during grouping and plotting, ensures all factor levels are correctly identified, and keeps categorical data neat and uniform.
+
+### Summary
+
+The raw data has been modified to produce an **analysis-ready format**, which includes numeric time variables, correctly formatted categorical data, and a subset of the data that includes only valid finishers. The data is now structured, consistent, and ready for the four main analyses of performance, age, gender, and country in the Ironman.
+
+</div>
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.width = 7, fig.height = 5)
+```
+
+```{r}
+needed_pkgs <- c(
+  "tidyverse", "lubridate", "scales", "janitor", "caret",
+  "stringr", "conflicted", "RColorBrewer"
+)
+
+missing_pkgs <- needed_pkgs[!vapply(needed_pkgs, requireNamespace, FUN.VALUE = logical(1), quietly = TRUE)]
+if (length(missing_pkgs) > 0) {
+  install.packages(missing_pkgs, repos = "https://cloud.r-project.org")
+}
+
+library(tidyverse)
+library(lubridate)
+library(scales)
+library(janitor)
+library(caret)
+library(stringr)
+library(conflicted)
+library(RColorBrewer)
+conflict_prefer("filter", "dplyr")
+conflict_prefer("select", "dplyr")
+conflict_prefer("lag", "dplyr")
+conflict_prefer("recode", "dplyr")
+theme_set(theme_minimal(base_size = 14))
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.width = 7, fig.height = 5)
+set.seed(42)
+
+```
+
+### Loading IronMan Data and Creating df
+
+```{r}
+if (!file.exists("ironman.Rdata")) {
+  stop("ironman.Rdata not found in working directory. Place the file in your working directory or set the path correctly.")
+}
+load("ironman.Rdata") 
+if (!exists("ironman")) stop("Loaded file does not contain object named 'ironman'. Check the .Rdata contents.")
+df <- ironman
+rm(ironman) 
+
+cat("Columns in df:\n"); print(names(df))
+cat("\nHead of df:\n"); print(head(df))
+```
+
+
+### convert "HH:MM:SS" or "MM:SS" → seconds
+
+```{r}
+
+time_to_seconds <- function(x){
+  vapply(x, FUN.VALUE = numeric(1), FUN = function(t){
+    if(is.na(t) || t == "") return(NA_real_)
+    t <- as.character(t)
+    parts <- str_split(t, ":", simplify = TRUE)
+    nums  <- suppressWarnings(as.numeric(parts))
+    if(any(is.na(nums))) return(NA_real_)
+    if(ncol(parts) == 3) return(nums[1]*3600 + nums[2]*60 + nums[3])
+    if(ncol(parts) == 2) return(nums[1]*60 + nums[2])
+    if(ncol(parts) == 1) return(nums[1])
+    
+    return(NA_real_)
+  })
+}
+
+df <- df %>%
+  mutate(
+    Swim_sec  = time_to_seconds(Swim),
+    Bike_sec  = time_to_seconds(Bike),
+    Run_sec   = time_to_seconds(Run),
+    Total_sec = time_to_seconds(Total),
+    Total_min = Total_sec / 60
+  )
+
+summary(df[, c("Swim_sec","Bike_sec","Run_sec","Total_sec")])
+
+```
+
+### Create minute columns and small derived columns
+
+```{r}
+
+df <- df %>%
+mutate(
+Swim_min = Swim_sec / 60,
+Bike_min = Bike_sec / 60,
+Run_min = Run_sec / 60,
+Total_min = Total_sec / 60
+)
+summary(df[, c("Swim_min","Bike_min","Run_min","Total_min")])
+```
+
+### Extract Age group, Gender from AG column and normalize column to char
+
+```{r}
+
+if (!"AG" %in% names(df)) {
+message("Column 'AG' not found — creating placeholders.")
+df$AG_chr <- NA_character_
+df$gender <- NA_character_
+df$age_group <- NA_character_
+df$age_group_clean <- NA_character_
+} else {
+
+df <- df %>% mutate(AG_chr = as.character(AG) %>% str_trim())
+
+df <- df %>%
+mutate(
+first_char = toupper(substr(AG_chr, 1, 1)),
+gender = case_when(
+first_char == "M" ~ "Male",
+first_char == "F" ~ "Female",
+TRUE ~ NA_character_
+),
+
+age_group = if_else(!is.na(AG_chr) & nchar(AG_chr) >= 2,
+str_trim(substr(AG_chr, 2, nchar(AG_chr))),
+NA_character_),
+age_group_clean = if_else(!is.na(age_group), toupper(str_trim(age_group)), NA_character_)
+) %>%
+select(-first_char)
+}
+```
+
+### Create Finished Colum with Finished/DNF/DNS/Unknown values
+
+```{r}
+if ("Total" %in% names(df)) {
+df$total_text <- as.character(df$Total)
+} else {
+df$total_text <- NA_character_
+}
+
+df <- df %>%
+mutate(
+total_text_u = if_else(!is.na(total_text), toupper(str_trim(total_text)), NA_character_),
+status = case_when(
+!is.na(total_text_u) & str_detect(total_text_u, "DNF|DNS|DQ") ~ "DNF/DNS",
+!is.na(Total_min) & !is.infinite(Total_min) ~ "Finished",
+is.na(total_text_u) & is.na(Total_min) ~ "DNF/DNS",
+TRUE ~ "Unknown"
+)
+) %>%
+select(-total_text_u)
+```
+
+### Create finished and full views for plotting
+
+```{r}
+
+finished_df <- df %>% filter(status == "Finished")
+plot_df <- df
+cat("Status counts:\n")
+print(df %>% count(status))
+cat("\nNumber of finishers (finished_df rows):", nrow(finished_df), "\n")
+```
+
+```{r}
+head(finished_df)
+```
+
+### Missiging values summary and outlier detection
+
+```{r}
+
+missing_summary <- df %>%
+summarise(
+n = n(),
+swim_missing = sum(is.na(Swim_min)),
+bike_missing = sum(is.na(Bike_min)),
+run_missing  = sum(is.na(Run_min)),
+total_missing= sum(is.na(Total_min)),
+gender_missing = sum(is.na(gender)),
+agegrp_missing = sum(is.na(age_group_clean)),
+status_unknown = sum(status == "Unknown", na.rm = TRUE)
+)
+missing_summary
+df %>% count(status)
+df <- df %>%
+mutate(
+swim_zero_flag = if_else(!is.na(Swim_min) & Swim_min <= 0, TRUE, FALSE)
+)
+q1 <- quantile(df$Total_min, 0.25, na.rm = TRUE)
+q3 <- quantile(df$Total_min, 0.75, na.rm = TRUE)
+iqr <- q3 - q1
+lower <- q1 - 1.5*iqr
+upper <- q3 + 1.5*iqr
+
+df <- df %>% mutate(
+total_outlier = case_when(
+is.na(Total_min) ~ NA,
+Total_min < lower ~ "low",
+Total_min > upper ~ "high",
+TRUE ~ "ok"
+)
+)
+
+df %>% count(total_outlier)
+
+```
+
+## Analysis
+
+### Plot 1
+
+#### Which race segment (swim, bike, run) has the strongest impact on total finish time?
+
+```{r}
+
+cors_vals <- tibble(
+segment = c("Swim", "Bike", "Run"),
+corr = c(
+cor(finished_df$Swim_min, finished_df$Total_min, use = "complete.obs"),
+cor(finished_df$Bike_min, finished_df$Total_min, use = "complete.obs"),
+cor(finished_df$Run_min,  finished_df$Total_min, use = "complete.obs")
+)
+) %>%
+mutate(abs_corr = abs(corr))
+
+cors_vals2 <- cors_vals %>% arrange(abs_corr)
+
+ggplot(cors_vals2,
+       aes(x = reorder(segment, abs_corr), y = abs_corr, fill = abs_corr)) +
+  geom_col(width = 0.65) +
+  geom_text(aes(label = scales::percent(abs_corr, accuracy = 0.1)),
+            hjust = -0.15, color = "white", size = 4.2) +
+  scale_fill_gradient(low = "#4DB3FF", high = "#003B73") +
+  coord_flip() +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Which Segment Best Explains Total Finishing Time?",
+    x = "Segment",
+    y = "Correlation Strength (|r|)"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.background = element_rect(fill = "#1A1A1A"),
+    plot.background = element_rect(fill = "#1A1A1A"),
+    axis.text = element_text(color = "white"),
+    axis.title = element_text(color = "white"),
+    plot.title = element_text(color = "white", face = "bold"),
+    legend.position = "none"
+  )
+
+```
+<div style="text-align: justify; text-justify: inter-word;">
+
+#### The comparison plot shows performance against overall completion time for each major discipline (swimming, biking, running) in an Ironman event. For example, the greatest correlation between discipline and overall finish is found in the biking portion of a race. This is due to the fact that the biking leg is the longest portion of a triathlon, allowing for a greater variance between competitors.
+
+
+### Interpretation:
+
+#### The bike leg of an Ironman race has the biggest impact on an athlete's overall completion time and should therefore be the primary focus of an athlete's training plan. Small improvements in the bike leg yield larger overall improvements in total race time.
+</div>
+
+### Plot 2
+
+#### Which countries supplied the most finishers?
+
+```{r}
+df <- df %>%
+  mutate(
+    total_text_u = if_else(!is.na(Total), toupper(str_trim(as.character(Total))), NA_character_),
+    status = case_when(
+      !is.na(total_text_u) & str_detect(total_text_u, "DNF|DNS|DQ") ~ "DNF/DNS",
+      !is.na(Total) ~ "Finished",
+      TRUE ~ "Unknown"
+    )
+  )
+
+top_countries <- df %>%
+  filter(status == "Finished") %>%
+  filter(!is.na(Country), Country != "") %>%
+  count(country = Country, sort = TRUE) %>%
+  slice_head(n = 10) %>%
+  mutate(country = fct_reorder(country, n))
+
+ggplot(top_countries, aes(x = country, y = n, fill = n)) +
+  geom_col(width = 0.7, show.legend = FALSE) +
+  coord_flip() +
+  geom_text(aes(label = n), hjust = -0.1, size = 4, fontface = "bold", color = "#011f4b") +
+  scale_fill_gradient(low = "#A6CEE3", high = "#1F78B4") +
+  labs(
+    title = "Top 10 Countries by Number of Finishers",
+    subtitle = "Highlighting the most represented countries in the Ironman event",
+    x = "Country",
+    y = "Number of Finishers"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.y = element_text(face = "bold", size = 12),
+    axis.title = element_text(face = "bold"),
+    plot.title = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(size = 12, color = "gray30"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+```
+
+
+<div style="text-align: justify; text-justify: inter-word;">
+
+#### The plot shows the top 10 countries by number of Ironman finishers, and it’s clear that Ireland (IRL) overwhelmingly leads with 626 finishers far more than any other country. Great Britain follows with 255, creating a noticeable gap between the top two nations and the rest. The United States appears in third with 49, and the remaining countries each contribute relatively small numbers, all below 20 finishers.
+
+### Interpretation:
+
+#### Overall, the chart highlights a strong regional concentration, with Ireland and Great Britain making up the majority of participants. This suggests the event may be more accessible or more popular in these regions, while participation from other countries is present but much more limited.
+
+</div>
+### Plot 3
+
+#### Are there significant performance differences between male and female athletes?
+
+```{r}
+split_cols <- c("Swim_min", "Bike_min", "Run_min", "t1_min", "t2_min", "trans_min")
+present_splits <- intersect(split_cols, names(finished_df))
+
+p3_df <- finished_df %>%
+  select(gender, any_of(present_splits)) %>%
+  pivot_longer(cols = -gender, names_to = "split", values_to = "minutes") %>%
+  mutate(split = case_when(
+    split == "Swim_min" ~ "Swim",
+    split == "Bike_min" ~ "Bike",
+    split == "Run_min"  ~ "Run",
+    split == "t1_min"   ~ "T1",
+    split == "t2_min"   ~ "T2",
+    split == "trans_min"~ "Transitions",
+    TRUE ~ split
+  )) %>%
+  filter(!is.na(minutes), !is.na(gender))
+
+if (nrow(p3_df) == 0) {
+  message("No data available to plot split times by gender.")
+} else {
+  ggplot(p3_df, aes(x = split, y = minutes, fill = gender)) +
+    geom_boxplot(position = position_dodge(width = 0.8)) +
+    labs(title = "Split times by gender (finishers)", x = "Split", y = "Minutes") +
+    theme_minimal()
+}
+```
+<div style="text-align: justify; text-justify: inter-word;">
+#### The box plot for average split time per gender shows average times for each of the three race components of the Ironman (Swim, Bike, Run) among male finishers and female finishers. In general, men tend to have slightly faster average times for most of the splits than women, although the differences between the average split times for men and women are not all that large. The overall pattern for both genders is approximately the same during each component of the race, suggesting that both genders are running similarly in pace and a very similar performance pattern during the race.
+
+### Interpretation:
+
+#### The distribution of split times shows consistent gender differences across all three disciplines. Female finishers exhibit slightly higher median times than male finishers in the bike, run, and swim segments, indicating marginally slower performance on average. The spread of times is broadly similar between genders, although males show a few more extreme outliers in the run and swim splits. Overall, the pattern suggests that while both groups display wide variability, male athletes tend to complete each segment somewhat faster than female athletes.
+</div>
+### Plot 4
+
+#### How does performance vary across different age groups?
+
+```{r}
+
+age_levels <- finished_df %>% 
+  filter(!is.na(age_group_clean)) %>% 
+  distinct(age_group_clean) %>% 
+  arrange(age_group_clean) %>% 
+  pull(age_group_clean)
+
+df_clean <- finished_df %>% 
+  filter(!age_group_clean %in% c("PC", "PRO"))
+
+ggplot(df_clean %>% filter(!is.na(age_group_clean)), 
+       aes(x = fct_relevel(age_group_clean, age_levels), y = Total_min, fill = Total_min)) +
+
+  geom_boxplot(outlier.shape = NA, width = 0.7, alpha = 0.6, color = "gray30") +
+  geom_jitter(aes(color = Total_min), width = 0.2, alpha = 0.4, size = 1.8, show.legend = FALSE) +
+
+  stat_summary(fun = median, geom = "point", shape = 23, size = 3.5, fill = "white") +
+  scale_fill_gradient(low = "#A1D99B", high = "#31A354") +
+  scale_color_gradient(low = "#A1D99B", high = "#31A354") +
+  
+  labs(
+    title = "Total Finishing Time by Age Group (Finishers)",
+    subtitle = "Boxplots with gradient fill and individual race points overlaid",
+    x = "Age Group",
+    y = "Total Time (minutes)"
+  ) +
+  
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.x = element_text(angle = 25, hjust = 1, face = "bold", color = "black"),
+    axis.title = element_text(face = "bold"),
+    plot.title = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(face = "italic", size = 12),
+    panel.grid.major.y = element_line(color = "gray85"),
+    panel.grid.minor = element_blank()
+  )
+```
+<div style="text-align: justify; text-justify: inter-word;">
+#### The boxplot comparison shows age-based performance patterns as seen in overall race completion time.
+
+### Interpretation:
+
+#### The distribution of total finishing times shows a clear age-related pattern. Athletes between 25 and 44 exhibit the lowest median finishing times and the tightest interquartile ranges, indicating stronger and more consistent performance. From approximately age 45 onward, both median times and variability increase steadily, and the slowest overall outcomes appear in the 65+ categories. Although all groups display wide individual variation, the central tendency demonstrates that finishing times generally rise with age.
+
+</div>
+
+
+## Conclusion
+
+<div style="text-align: justify; text-justify: inter-word;">
+
+The study used Ironman race data to examine the primary drivers of athlete performance, assess how demographic factors influence outcomes, and identify relationships between race segments, age groups, gender, and country representation. By following a structured analytical approach, the project produced a clearer understanding of how athletes across different groups perform relative to one another.
+
+### Key Performance Insights
+
+- **The bike segment had the strongest impact on overall finish time**, followed by the run and then the swim.  
+  This indicates that athletes seeking meaningful improvements in total race time should prioritise bike-focused training while still maintaining development in the run and swim segments.
+  
+- **Finishers represented a wide range of countries, with substantial variation in participation levels.**  
+  Higher representation from certain countries likely reflects differences in participation culture, access to training resources, and broader interest in triathlon.
+  These findings have meaningful implications for coaches, athletes, race organisers, and sporting bodies. They offer evidence-based guidance on training priorities, support performance-prediction modelling, and highlight demographic and geographic trends useful for participation initiatives and development programs.
+  
+- **Gender differences existed but were modest relative to the overlap in performance distributions.**  
+  While male athletes exhibited slightly faster average times, female athletes performed at a consistently high level. This reinforces that endurance performance in long-distance triathlons is far more balanced across genders than in many shorter or power-based sports.
+
+- **Age demonstrated a significant effect on performance.**  
+  Younger athletes generally posted faster times, whereas older athletes showed both slower averages and greater variation in results. This reflects the combined influence of physiological ageing and the experience advantages often seen in endurance sports. Importantly, older athletes remain highly competitive within their respective age categories.
+
+In conclusion, this analysis provides a comprehensive, data-driven view of the factors shaping Ironman performance from race-segment influence to age, gender, and global representation.
+
+
+</div>
+---
+
+### Team Member Contributions
+
+**Kaviyarasu Anbalagan — Data Preprocessing, Plot 1 & Repository Management:** Contributed to cleaning, transforming, and preparing the dataset for analysis. Developed Plot 1 (segment impact on total finish time) and documented all data adjustments and preprocessing steps. Oversaw overall team coordination, managed the project repository, and ensured version control and consistency across all coding and analysis files.
+
+**Tina Joy — Plot 2, Documentation & Review:** Developed Plot 2 (country-wise finisher representation) with appropriate visualizations and statistical summaries. Assisted in documenting the methodology and interpretation for all plots to ensure clarity and consistency and assisted in reviewing the Data Adjustments section.
+
+**Dhanus Kumar Sankar — Plot 3, Analysis Support & Documentation:** Designed and coded Plot 3 (gender-based performance differences) and contributed coding support for other plots where needed. Participated in documenting analytical insights and interpretations for all segments. Assisted in preparing report, emphasizing visual clarity, plot interpretation, and concise explanation of analytical findings.
+
+**Dhanush Hariharan Sivakumar — Plot 4 & Report Integration:** Created Plot 4 (performance variation across age groups) with customized color scales and labels for clarity. Compiled all sections into the final report, integrating plots, statistical analyses, and interpretations, while contributing to coding, data preprocessing, and documentation for other sections to ensure reproducibility and consistency.
+
+
+
